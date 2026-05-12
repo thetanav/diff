@@ -1,75 +1,59 @@
-# React + TypeScript + Vite
+# PR Diff Viewer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A minimal, fast PR diff viewer that strips away GitHub's noise.
 
-Currently, two official plugins are available:
+Paste any GitHub PR URL (or `owner/repo#123`) and get a clean, compact view of every file change — additions, deletions, and all.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## How it works
 
-## React Compiler
-
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+You paste a PR URL
+       │
+       ▼
+┌─────────────────┐
+│  Bun API server │  ← Fetches files via GitHub API (with pagination)
+└────────┬────────┘       Auth: GitHub token or `gh auth token`
+         │
+         ▼
+┌─────────────────┐
+│  Parse the      │  ← Splits patch hunks (@@ markers), truncates long lines
+│  raw diff patch │     Caps at 450 lines per file, 240 chars per line
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  React UI       │  ← Accordion file list, search/filter, dark mode
+│  + Tailwind     │     Max rows slider to limit visible diff lines
+└─────────────────┘
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Features:
+- Lazy-load individual file diffs on click
+- File search filter
+- Dark/light mode
+- Configurable max rows display
+- Uses your `gh` CLI token automatically
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Setup
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+bun install
+bun run dev
 ```
+
+Open `http://localhost:3000` and paste a PR URL.
+
+## Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | Server port |
+| `GITHUB_TOKEN` | — | GitHub API token |
+| `MAX_FILES` | `3000` | Max files to fetch |
+| `MAX_LINES_PER_FILE` | `450` | Lines shown per file |
+| `MAX_LINE_LENGTH` | `240` | Chars shown per line |
+| `PR_FILES_CACHE_TTL_MS` | `60000` | Cache TTL in ms |
+
+## Stack
+
+React · TypeScript · Bun · Tailwind CSS · React Query · Lucide
