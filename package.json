@@ -1,0 +1,24 @@
+{
+  "name": "pr-diff-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "bun --watch server.ts",
+    "dev:web": "bunx vite dev",
+    "build": "bunx vite build",
+    "start": "bun server.ts"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^7.2.7",
+    "typescript": "^5.9.3",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3"
+  }
+}
