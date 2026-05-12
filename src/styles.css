@@ -185,30 +185,41 @@ button:disabled {
 
 .diff {
   overflow: auto;
-  max-height: 62vh;
   border-top: 1px solid #e5eaf0;
   background: #fbfcfe;
 }
 
+.diff-spacer {
+  position: relative;
+  width: 100%;
+}
+
+.diff-window {
+  position: absolute;
+  inset: 0 0 auto 0;
+  width: 100%;
+  contain: content;
+}
+
 .hunk-head {
-  position: sticky;
-  top: 0;
   padding: 7px 10px;
   color: #315082;
   background: #eef4ff;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
+  height: 24px;
+  line-height: 24px;
 }
 
 .diff-line {
   display: grid;
   grid-template-columns: 54px 54px 18px minmax(0, 1fr);
-  min-height: 22px;
+  min-height: 24px;
   padding-right: 12px;
   border-left: 3px solid transparent;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
-  line-height: 22px;
+  line-height: 24px;
   white-space: pre;
 }
 
