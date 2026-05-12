@@ -1,63 +1,75 @@
-# PR Diff Viewer
+# React + TypeScript + Vite
 
-A small Bun server plus React UI for compact GitHub pull request diffs.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Run
+Currently, two official plugins are available:
 
-For development:
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-```powershell
-bun install
-bun run dev
+## React Compiler
+
+The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+
+Note: This will impact Vite dev & build performances.
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
 
-Open `http://127.0.0.1:5173`.
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
-For the built app:
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
 
-```powershell
-bun install
-bun run build
-bun start
-```
-
-Open `http://localhost:3000`.
-
-Use a GitHub PR URL, or shorthand:
-
-```text
-owner/repo#123
-```
-
-## Auth
-
-The server authenticates GitHub requests in this order:
-
-1. `GITHUB_TOKEN`
-2. `gh auth token`
-3. No token, for public PRs only
-
-To use the GitHub CLI, log in once:
-
-```powershell
-gh auth login
-bun start
-```
-
-Or set `GITHUB_TOKEN` before starting the server:
-
-```powershell
-$env:GITHUB_TOKEN="github_pat_..."
-bun start
-```
-
-## Render Caps
-
-The server keeps the React payload small by truncating large diffs before sending them to the browser.
-
-```powershell
-$env:MAX_FILES="80"
-$env:MAX_LINES_PER_FILE="450"
-$env:MAX_LINE_LENGTH="240"
-bun start
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
