@@ -6,14 +6,16 @@ function App() {
   const [pr, setPr] = useState("");
   const [submittedPr, setSubmittedPr] = useState("");
   const [filter, setFilter] = useState("");
+  const [maxRows, setMaxRows] = useState(10);
 
   const {
     data: payload,
     error,
     isFetching,
+    refetch,
   } = useQuery<DiffPayload>({
     queryKey: ["pr", submittedPr],
-    enabled: submittedPr.trim().length > 0,
+    enabled: false,
     queryFn: async () => {
       const response = await fetch(
         `/api/pr-diff?pr=${encodeURIComponent(submittedPr)}`,
@@ -31,6 +33,7 @@ function App() {
   function loadDiff(event: any) {
     event.preventDefault();
     setSubmittedPr(pr.trim());
+    refetch();
   }
 
   const files = useMemo(() => {
@@ -56,9 +59,7 @@ function App() {
   return (
     <main>
       <header className="topbar">
-        <div>
-          <h1>PR Diff Viewer</h1>
-        </div>
+        <h1 className="font-bold">PR Diff Viewer</h1>
         <form onSubmit={loadDiff}>
           <input
             aria-label="Pull request"
@@ -95,6 +96,20 @@ function App() {
               <span>Deletions</span>
               <strong className="remove">-{totals.deletions}</strong>
             </div>
+            <label className="summary-control">
+              <span>Max rows</span>
+              <input
+                aria-label="Max rows"
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={maxRows}
+                onChange={(event) =>
+                  setMaxRows(Math.max(1, Number(event.target.value || 0)))
+                }
+              />
+            </label>
             <input
               aria-label="Filter files"
               value={filter}
@@ -114,6 +129,7 @@ function App() {
               <DiffFileView
                 file={file}
                 defaultOpen={index < 2}
+                maxRows={maxRows}
                 key={`${file.oldPath}-${file.newPath}`}
               />
             ))}

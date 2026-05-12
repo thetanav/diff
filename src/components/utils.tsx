@@ -1,4 +1,30 @@
+import { ChevronRight, File } from "lucide-react";
 import { memo, useMemo, useState } from "react";
+
+const extIcons: Record<string, string> = {
+  ts: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/typescript/typescript-original.svg",
+  tsx: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/react/react-original.svg",
+  js: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/javascript/javascript-original.svg",
+  jsx: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/react/react-original.svg",
+  md: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/markdown/markdown-original.svg",
+  json: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/json/json-original.svg",
+  py: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg",
+  css: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg",
+  html: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg",
+  gitignore: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/git/git-original.svg",
+};
+
+export function FileIcon({ filename, className = "w-5 h-5" }: { filename: string; className?: string }) {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  const extKey = ext === "gitignore" ? "gitignore" : ext;
+  const iconUrl = extIcons[extKey];
+
+  if (iconUrl) {
+    return <img src={iconUrl} className={className} alt={ext} />;
+  }
+
+  return <File className={className} />;
+}
 
 export type DiffLineType = "add" | "remove" | "context" | "meta";
 
@@ -69,15 +95,17 @@ export const DiffLineRow = memo(function DiffLineRow({
 export const DiffFileView = memo(function DiffFileView({
   file,
   defaultOpen,
+  maxRows,
 }: {
   file: DiffFile;
   defaultOpen: boolean;
+  maxRows: number;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const path = file.newPath || file.oldPath;
   const [scrollTop, setScrollTop] = useState(0);
-  const maxVisibleRows = 30;
   const rowHeight = 24;
+  const maxVisibleRows = Math.max(1, Math.floor(maxRows));
 
   const rows = useMemo<DiffRow[]>(() => {
     const result: DiffRow[] = [];
@@ -109,14 +137,18 @@ export const DiffFileView = memo(function DiffFileView({
   return (
     <section className="file">
       <button className="file-head" onClick={() => setOpen((value) => !value)}>
-        <span className="twisty">{open ? "v" : ">"}</span>
+        <span className="twisty">
+          <ChevronRight
+            className={`transition size-4 ${open ? "rotate-90" : ""}`}
+          />
+        </span>
         <span className="path" title={path}>
           {path}
         </span>
         <span className="stats">
           <b className="add">+{file.additions}</b>
           <b className="remove">-{file.deletions}</b>
-          <span>{lineCount} shown</span>
+          <span>{lineCount} lines</span>
         </span>
       </button>
       {open ? (
@@ -129,7 +161,7 @@ export const DiffFileView = memo(function DiffFileView({
           <div className="diff-spacer" style={{ height: `${spacerHeight}px` }}>
             <div
               className="diff-window"
-              style={{ transform: `translateY(${startIndex * rowHeight}px)` }}
+              style={{ paddingTop: `${startIndex * rowHeight}px` }}
             >
               {visibleRows.map((row, rowIndex) =>
                 row.kind === "hunk" ? (
