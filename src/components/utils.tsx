@@ -11,10 +11,17 @@ const extIcons: Record<string, string> = {
   py: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg",
   css: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg",
   html: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg",
-  gitignore: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/git/git-original.svg",
+  gitignore:
+    "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/git/git-original.svg",
 };
 
-export function FileIcon({ filename, className = "w-5 h-5" }: { filename: string; className?: string }) {
+export function FileIcon({
+  filename,
+  className = "w-5 h-5",
+}: {
+  filename: string;
+  className?: string;
+}) {
   const ext = filename.split(".").pop()?.toLowerCase() || "";
   const extKey = ext === "gitignore" ? "gitignore" : ext;
   const iconUrl = extIcons[extKey];
@@ -130,21 +137,23 @@ export const DiffFileView = memo(function DiffFileView({
     Math.min(maxStart, Math.floor(scrollTop / rowHeight)),
   );
   const endIndex = Math.min(totalRows, startIndex + maxVisibleRows);
-  const visibleRows = rows.slice(startIndex, endIndex);
+  const visibleRows = rows.slice(startIndex, endIndex + 5);
   const spacerHeight = totalRows * rowHeight;
   const viewportHeight = Math.min(totalRows, maxVisibleRows) * rowHeight;
 
   return (
     <section className="file">
-      <button className="file-head" onClick={() => setOpen((value) => !value)}>
-        <span className="twisty">
+      <button
+        className="file-head flex justify-between items-center select-none"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <div className="flex gap-2 items-center">
           <ChevronRight
             className={`transition size-4 ${open ? "rotate-90" : ""}`}
           />
-        </span>
-        <span className="path" title={path}>
-          {path}
-        </span>
+          <FileIcon filename={path} className="w-4 h-4" />
+          <p>{path}</p>
+        </div>
         <span className="stats">
           <b className="add">+{file.additions}</b>
           <b className="remove">-{file.deletions}</b>

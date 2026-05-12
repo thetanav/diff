@@ -1,12 +1,23 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { DiffFileView, samplePr, type DiffPayload } from "./components/utils";
 import { useQuery } from "@tanstack/react-query";
+import { Moon, Sun } from "lucide-react";
 
 function App() {
   const [pr, setPr] = useState("");
   const [submittedPr, setSubmittedPr] = useState("");
   const [filter, setFilter] = useState("");
   const [maxRows, setMaxRows] = useState(10);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
 
   const {
     data: payload,
@@ -60,7 +71,16 @@ function App() {
     <main>
       <header className="topbar">
         <h1 className="font-bold">PR Diff Viewer</h1>
-        <form onSubmit={loadDiff}>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDarkMode((d) => !d)}
+            className="toggle-btn"
+            aria-label="Toggle dark mode"
+          >
+            {darkMode ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          </button>
+          <form onSubmit={loadDiff} className="flex-1">
           <input
             aria-label="Pull request"
             value={pr}
@@ -70,7 +90,8 @@ function App() {
           <button disabled={isFetching || pr.trim().length === 0}>
             {isFetching ? "Loading" : "Fetch"}
           </button>
-        </form>
+          </form>
+        </div>
       </header>
 
       {error ? (
