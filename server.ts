@@ -1,8 +1,11 @@
 const PORT = Number(process.env.PORT ?? 3000);
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const MAX_FILES = Number(process.env.MAX_FILES ?? 80);
+const MAX_FILES = Number(process.env.MAX_FILES ?? 3000);
 const MAX_LINES_PER_FILE = Number(process.env.MAX_LINES_PER_FILE ?? 450);
 const MAX_LINE_LENGTH = Number(process.env.MAX_LINE_LENGTH ?? 240);
+const PR_FILES_CACHE_TTL_MS = Number(
+  process.env.PR_FILES_CACHE_TTL_MS ?? 60_000,
+);
 let githubTokenPromise: Promise<string | undefined> | undefined;
 
 type DiffLineType = "add" | "remove" | "context" | "meta";
@@ -22,8 +25,15 @@ type DiffHunk = {
 type DiffFile = {
   oldPath: string;
   newPath: string;
+  status?: string;
   additions: number;
   deletions: number;
+  changes?: number;
+  patchAvailable?: boolean;
+  patchLoaded?: boolean;
+  blobUrl?: string;
+  rawUrl?: string;
+  contentsUrl?: string;
   omittedLines: number;
   hunks: DiffHunk[];
 };
@@ -37,20 +47,47 @@ type DiffPayload = {
   files: DiffFile[];
 };
 
+type ParsedPr = {
+  owner: string;
+  repo: string;
+  number: string;
+  source: string;
+};
+
+type GithubPrFile = {
+  filename: string;
+  previous_filename?: string;
+  status?: string;
+  additions?: number;
+  deletions?: number;
+  changes?: number;
+  patch?: string;
+  blob_url?: string;
+  raw_url?: string;
+  contents_url?: string;
+};
+
+type CachedPrFiles = {
+  expiresAt: number;
+  files: GithubPrFile[];
+};
+
+const prFilesCache = new Map<string, CachedPrFiles>();
+
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
     ...init,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      ...init.headers
-    }
+      ...init.headers,
+    },
   });
 }
 
-function parsePrInput(input: string) {
+function parsePrInput(input: string): ParsedPr | null {
   const trimmed = input.trim();
   const urlMatch = trimmed.match(
-    /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/i
+    /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/i,
   );
 
   if (urlMatch) {
@@ -58,7 +95,7 @@ function parsePrInput(input: string) {
       owner: urlMatch[1],
       repo: urlMatch[2],
       number: urlMatch[3],
-      source: `https://github.com/${urlMatch[1]}/${urlMatch[2]}/pull/${urlMatch[3]}`
+      source: `https://github.com/${urlMatch[1]}/${urlMatch[2]}/pull/${urlMatch[3]}`,
     };
   }
 
@@ -68,7 +105,7 @@ function parsePrInput(input: string) {
       owner: shortMatch[1],
       repo: shortMatch[2],
       number: shortMatch[3],
-      source: `${shortMatch[1]}/${shortMatch[2]}#${shortMatch[3]}`
+      source: `${shortMatch[1]}/${shortMatch[2]}#${shortMatch[3]}`,
     };
   }
 
@@ -78,17 +115,19 @@ function parsePrInput(input: string) {
 async function readGhCliToken() {
   const proc = Bun.spawn(["gh", "auth", "token"], {
     stdout: "pipe",
-    stderr: "pipe"
+    stderr: "pipe",
   });
 
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
-    proc.exited
+    proc.exited,
   ]);
 
   if (exitCode !== 0) {
-    console.warn(`Could not read GitHub CLI token: ${stderr.trim() || `exit ${exitCode}`}`);
+    console.warn(
+      `Could not read GitHub CLI token: ${stderr.trim() || `exit ${exitCode}`}`,
+    );
     return undefined;
   }
 
@@ -101,25 +140,64 @@ function getGithubToken() {
   return githubTokenPromise;
 }
 
-async function fetchDiff(owner: string, repo: string, number: string) {
+function getCacheKey(owner: string, repo: string, number: string) {
+  return `${owner}/${repo}#${number}`.toLowerCase();
+}
+
+async function githubFetch(url: string) {
   const token = await getGithubToken();
-  const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
-    {
-      headers: {
-        accept: "application/vnd.github.v3.diff",
-        "user-agent": "bun-pr-diff-viewer",
-        ...(token ? { authorization: `Bearer ${token}` } : {})
-      }
-    }
-  );
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "user-agent": "bun-pr-diff-viewer",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+  });
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`GitHub returned ${response.status}: ${body.slice(0, 300)}`);
+    throw new Error(
+      `GitHub returned ${response.status}: ${body.slice(0, 300)}`,
+    );
   }
 
-  return response.text();
+  return response;
+}
+
+async function fetchPrFiles(owner: string, repo: string, number: string) {
+  const files: GithubPrFile[] = [];
+  let page = 1;
+
+  while (files.length < MAX_FILES) {
+    const response = await githubFetch(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/files?per_page=100&page=${page}`,
+    );
+    const pageFiles = (await response.json()) as GithubPrFile[];
+
+    files.push(...pageFiles.slice(0, Math.max(0, MAX_FILES - files.length)));
+
+    if (pageFiles.length < 100) break;
+    page += 1;
+  }
+
+  return files;
+}
+
+async function getPrFiles(parsed: ParsedPr) {
+  const cacheKey = getCacheKey(parsed.owner, parsed.repo, parsed.number);
+  const cached = prFilesCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.files;
+  }
+
+  const files = await fetchPrFiles(parsed.owner, parsed.repo, parsed.number);
+  prFilesCache.set(cacheKey, {
+    expiresAt: Date.now() + PR_FILES_CACHE_TTL_MS,
+    files,
+  });
+  return files;
 }
 
 function truncateLine(line: string) {
@@ -131,175 +209,226 @@ function parseRange(header: string) {
   const match = header.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
   return {
     oldLine: match ? Number(match[1]) : undefined,
-    newLine: match ? Number(match[2]) : undefined
+    newLine: match ? Number(match[2]) : undefined,
   };
 }
 
-function parseDiff(diff: string): DiffPayload {
-  const files: DiffFile[] = [];
-  let currentFile: DiffFile | undefined;
+function toDiffFileSummary(file: GithubPrFile): DiffFile {
+  return {
+    oldPath: file.previous_filename ?? file.filename,
+    newPath: file.filename,
+    status: file.status,
+    additions: file.additions ?? 0,
+    deletions: file.deletions ?? 0,
+    changes: file.changes,
+    patchAvailable: Boolean(file.patch),
+    patchLoaded: false,
+    blobUrl: file.blob_url,
+    rawUrl: file.raw_url,
+    contentsUrl: file.contents_url,
+    omittedLines: 0,
+    hunks: [],
+  };
+}
+
+function parsePatch(file: GithubPrFile): DiffFile {
+  const diffFile = toDiffFileSummary(file);
+  diffFile.patchLoaded = true;
+
+  if (!file.patch) {
+    diffFile.hunks.push({
+      header: "Patch unavailable",
+      lines: [
+        {
+          type: "meta",
+          content:
+            "GitHub did not provide a text patch for this file. It may be binary, too large, or generated.",
+        },
+      ],
+    });
+    return diffFile;
+  }
+
   let currentHunk: DiffHunk | undefined;
   let oldLine: number | undefined;
   let newLine: number | undefined;
 
-  const ensureFile = () => {
-    if (!currentFile) {
-      currentFile = {
-        oldPath: "",
-        newPath: "",
-        additions: 0,
-        deletions: 0,
-        omittedLines: 0,
-        hunks: []
-      };
-      files.push(currentFile);
-    }
-    return currentFile;
-  };
-
-  for (const rawLine of diff.split("\n")) {
-    if (rawLine.startsWith("diff --git ")) {
-      const match = rawLine.match(/^diff --git a\/(.+) b\/(.+)$/);
-      currentFile = {
-        oldPath: match?.[1] ?? "",
-        newPath: match?.[2] ?? "",
-        additions: 0,
-        deletions: 0,
-        omittedLines: 0,
-        hunks: []
-      };
-      currentHunk = undefined;
-      files.push(currentFile);
-      continue;
-    }
-
-    if (!currentFile) continue;
-
-    if (rawLine.startsWith("--- ")) {
-      currentFile.oldPath = rawLine.replace(/^--- a\//, "").replace(/^--- /, "");
-      continue;
-    }
-
-    if (rawLine.startsWith("+++ ")) {
-      currentFile.newPath = rawLine.replace(/^\+\+\+ b\//, "").replace(/^\+\+\+ /, "");
-      continue;
-    }
-
+  for (const rawLine of file.patch.split("\n")) {
     if (rawLine.startsWith("@@ ")) {
       const range = parseRange(rawLine);
       oldLine = range.oldLine;
       newLine = range.newLine;
       currentHunk = { header: rawLine, lines: [] };
-      currentFile.hunks.push(currentHunk);
+      diffFile.hunks.push(currentHunk);
       continue;
     }
 
     if (!currentHunk) {
-      if (rawLine.startsWith("new file mode") || rawLine.startsWith("deleted file mode")) {
-        const file = ensureFile();
-        file.hunks.push({ header: rawLine, lines: [] });
+      currentHunk = { header: "File changes", lines: [] };
+      diffFile.hunks.push(currentHunk);
+    }
+
+    const visibleLines = diffFile.hunks.reduce(
+      (sum, hunk) => sum + hunk.lines.length,
+      0,
+    );
+    if (visibleLines >= MAX_LINES_PER_FILE) {
+      diffFile.omittedLines += 1;
+      if (rawLine.startsWith("+") && !rawLine.startsWith("+++")) {
+        if (newLine !== undefined) newLine += 1;
+      } else if (rawLine.startsWith("-") && !rawLine.startsWith("---")) {
+        if (oldLine !== undefined) oldLine += 1;
+      } else if (rawLine.startsWith(" ")) {
+        if (oldLine !== undefined) oldLine += 1;
+        if (newLine !== undefined) newLine += 1;
       }
       continue;
     }
 
     if (rawLine.startsWith("+") && !rawLine.startsWith("+++")) {
-      currentFile.additions += 1;
-      const visibleLines = currentFile.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
-      if (visibleLines >= MAX_LINES_PER_FILE) {
-        currentFile.omittedLines += 1;
-        if (newLine !== undefined) newLine += 1;
-        continue;
-      }
       currentHunk.lines.push({
         type: "add",
         content: truncateLine(rawLine.slice(1)),
-        newLine
+        newLine,
       });
       if (newLine !== undefined) newLine += 1;
       continue;
     }
 
     if (rawLine.startsWith("-") && !rawLine.startsWith("---")) {
-      currentFile.deletions += 1;
-      const visibleLines = currentFile.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
-      if (visibleLines >= MAX_LINES_PER_FILE) {
-        currentFile.omittedLines += 1;
-        if (oldLine !== undefined) oldLine += 1;
-        continue;
-      }
       currentHunk.lines.push({
         type: "remove",
         content: truncateLine(rawLine.slice(1)),
-        oldLine
+        oldLine,
       });
       if (oldLine !== undefined) oldLine += 1;
       continue;
     }
 
     if (rawLine.startsWith(" ")) {
-      const visibleLines = currentFile.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
-      if (visibleLines >= MAX_LINES_PER_FILE) {
-        currentFile.omittedLines += 1;
-        if (oldLine !== undefined) oldLine += 1;
-        if (newLine !== undefined) newLine += 1;
-        continue;
-      }
       currentHunk.lines.push({
         type: "context",
         content: truncateLine(rawLine.slice(1)),
         oldLine,
-        newLine
+        newLine,
       });
       if (oldLine !== undefined) oldLine += 1;
       if (newLine !== undefined) newLine += 1;
       continue;
     }
 
-    const visibleLines = currentFile.hunks.reduce((sum, hunk) => sum + hunk.lines.length, 0);
-    if (visibleLines >= MAX_LINES_PER_FILE) {
-      currentFile.omittedLines += 1;
-      continue;
-    }
-
     currentHunk.lines.push({ type: "meta", content: truncateLine(rawLine) });
   }
 
-  const renderedFiles = files.slice(0, MAX_FILES);
-
-  return {
-    source: "",
-    fetchedAt: new Date().toISOString(),
-    fileCount: files.length,
-    renderedFileCount: renderedFiles.length,
-    omittedFiles: Math.max(0, files.length - renderedFiles.length),
-    files: renderedFiles
-  };
+  return diffFile;
 }
 
-async function handleApi(request: Request) {
+function findFile(files: GithubPrFile[], path: string) {
+  return files.find(
+    (file) => file.filename === path || file.previous_filename === path,
+  );
+}
+
+async function handleDiffSummary(request: Request) {
   const url = new URL(request.url);
   const pr = url.searchParams.get("pr");
 
   if (!pr) {
-    return json({ error: "Pass ?pr=https://github.com/owner/repo/pull/123 or ?pr=owner/repo#123" }, { status: 400 });
+    return json(
+      {
+        error:
+          "Pass ?pr=https://github.com/owner/repo/pull/123 or ?pr=owner/repo#123",
+      },
+      { status: 400 },
+    );
   }
 
   const parsed = parsePrInput(pr);
   if (!parsed) {
-    return json({ error: "Could not parse PR input. Use a GitHub PR URL or owner/repo#123." }, { status: 400 });
+    return json(
+      {
+        error:
+          "Could not parse PR input. Use a GitHub PR URL or owner/repo#123.",
+      },
+      { status: 400 },
+    );
   }
 
   try {
-    const diff = await fetchDiff(parsed.owner, parsed.repo, parsed.number);
-    const payload = parseDiff(diff);
-    payload.source = parsed.source;
+    const files = await getPrFiles(parsed);
+    const renderedFiles = files.slice(0, MAX_FILES).map(toDiffFileSummary);
+    const payload: DiffPayload = {
+      source: parsed.source,
+      fetchedAt: new Date().toISOString(),
+      fileCount: files.length,
+      renderedFileCount: renderedFiles.length,
+      omittedFiles: Math.max(0, files.length - renderedFiles.length),
+      files: renderedFiles,
+    };
+
     return json(payload, {
       headers: {
-        "cache-control": "public, max-age=60"
-      }
+        "cache-control": "public, max-age=60",
+      },
     });
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Failed to fetch diff" }, { status: 502 });
+    return json(
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to fetch PR files",
+      },
+      { status: 502 },
+    );
+  }
+}
+
+async function handleFileDiff(request: Request) {
+  const url = new URL(request.url);
+  const pr = url.searchParams.get("pr");
+  const path = url.searchParams.get("path");
+
+  if (!pr || !path) {
+    return json(
+      { error: "Pass ?pr=owner/repo#123 and ?path=changed/file.ts" },
+      { status: 400 },
+    );
+  }
+
+  const parsed = parsePrInput(pr);
+  if (!parsed) {
+    return json(
+      {
+        error:
+          "Could not parse PR input. Use a GitHub PR URL or owner/repo#123.",
+      },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const files = await getPrFiles(parsed);
+    const file = findFile(files, path);
+
+    if (!file) {
+      return json(
+        { error: `Could not find ${path} in ${parsed.source}` },
+        { status: 404 },
+      );
+    }
+
+    return json(parsePatch(file), {
+      headers: {
+        "cache-control": "public, max-age=60",
+      },
+    });
+  } catch (error) {
+    return json(
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to fetch file diff",
+      },
+      { status: 502 },
+    );
   }
 }
 
@@ -316,7 +445,11 @@ Bun.serve({
     const url = new URL(request.url);
 
     if (url.pathname === "/api/pr-diff") {
-      return handleApi(request);
+      return handleDiffSummary(request);
+    }
+
+    if (url.pathname === "/api/pr-file-diff") {
+      return handleFileDiff(request);
     }
 
     const staticResponse = await serveStatic(url.pathname);
@@ -326,9 +459,10 @@ Bun.serve({
     if (await fallback.exists()) return new Response(fallback);
 
     return json({
-      message: "PR diff API is running. Use `bunx vite --host 127.0.0.1` for the React dev app or `bun run build` before `bun start`."
+      message:
+        "PR diff API is running. Use `bunx vite --host 127.0.0.1` for the React dev app or `bun run build` before `bun start`.",
     });
-  }
+  },
 });
 
 console.log(`Bun server listening on http://localhost:${PORT}`);

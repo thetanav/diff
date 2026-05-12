@@ -8,6 +8,10 @@
     font-family: "Geist Variable", sans-serif;
 }
 
+.mono {
+    font-family: "Geist Mono Variable", monospace;
+}
+
 main {
     width: min(1400px, calc(100vw - 32px));
     margin: 0 auto;
@@ -37,33 +41,6 @@ form,
 .summary {
     display: flex;
     gap: 10px;
-}
-
-input {
-    width: 100%;
-    min-width: 0;
-
-    border: 1px solid #c8d2df;
-    border-radius: 6px;
-    padding: 0 12px;
-    color: #18202a;
-    background: #fff;
-}
-
-button {
-    height: 42px;
-    border: 1px solid #0c6f57;
-    border-radius: 6px;
-    padding: 0 16px;
-    color: #fff;
-    background: #0d7f63;
-    cursor: pointer;
-}
-
-button:disabled {
-    border-color: #a4b0bd;
-    background: #a4b0bd;
-    cursor: default;
 }
 
 .error,

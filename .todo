@@ -1,2 +1,2 @@
+- [x] For large pr we have a strategy, first get files and any metadata the api provide, then for each file get the diff/patch and priority for files that are in the users view.
 - [ ] fix styles
-- [ ] For large pr we have a strategy, first get files and any metadata the api provide, then for each file get the diff/patch and priority for files that are in the users view.

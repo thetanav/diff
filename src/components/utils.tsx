@@ -1,5 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, File } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 const extIcons: Record<string, string> = {
   ts: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/typescript/typescript-original.svg",
@@ -50,8 +51,15 @@ export type DiffHunk = {
 export type DiffFile = {
   oldPath: string;
   newPath: string;
+  status?: string;
   additions: number;
   deletions: number;
+  changes?: number;
+  patchAvailable?: boolean;
+  patchLoaded?: boolean;
+  blobUrl?: string;
+  rawUrl?: string;
+  contentsUrl?: string;
   omittedLines: number;
   hunks: DiffHunk[];
 };
@@ -103,31 +111,75 @@ export const DiffFileView = memo(function DiffFileView({
   file,
   defaultOpen,
   maxRows,
+  pr,
 }: {
   file: DiffFile;
   defaultOpen: boolean;
   maxRows: number;
+  pr: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const path = file.newPath || file.oldPath;
   const [scrollTop, setScrollTop] = useState(0);
+  const [isInView, setIsInView] = useState(defaultOpen);
+  const sectionRef = useRef<HTMLElement | null>(null);
   const rowHeight = 24;
   const maxVisibleRows = Math.max(1, Math.floor(maxRows));
 
+  useEffect(() => {
+    const element = sectionRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") {
+      setIsInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsInView(entry.isIntersecting),
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const patchQuery = useQuery<DiffFile>({
+    queryKey: ["pr-file-diff", pr, path],
+    enabled: Boolean(
+      pr && isInView && file.patchAvailable && !file.patchLoaded,
+    ),
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/pr-file-diff?pr=${encodeURIComponent(pr)}&path=${encodeURIComponent(path)}`,
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to load file patch");
+      }
+
+      return data as DiffFile;
+    },
+    staleTime: 60_000,
+  });
+
+  const currentFile = patchQuery.data ?? file;
+  const patchError = patchQuery.error;
+
   const rows = useMemo<DiffRow[]>(() => {
     const result: DiffRow[] = [];
-    for (const hunk of file.hunks) {
+    for (const hunk of currentFile.hunks) {
       result.push({ kind: "hunk", header: hunk.header });
       for (const line of hunk.lines) {
         result.push({ kind: "line", line });
       }
     }
     return result;
-  }, [file]);
+  }, [currentFile]);
 
   const lineCount = useMemo(
-    () => file.hunks.reduce((count, hunk) => count + hunk.lines.length, 0),
-    [file],
+    () =>
+      currentFile.hunks.reduce((count, hunk) => count + hunk.lines.length, 0),
+    [currentFile],
   );
 
   const totalRows = rows.length;
@@ -139,12 +191,13 @@ export const DiffFileView = memo(function DiffFileView({
   const endIndex = Math.min(totalRows, startIndex + maxVisibleRows);
   const visibleRows = rows.slice(startIndex, endIndex + 5);
   const spacerHeight = totalRows * rowHeight;
-  const viewportHeight = Math.min(totalRows, maxVisibleRows) * rowHeight;
+  const viewportHeight =
+    Math.max(1, Math.min(totalRows, maxVisibleRows)) * rowHeight;
 
   return (
-    <section className="file">
+    <section className="file" ref={sectionRef}>
       <button
-        className="file-head flex justify-between items-center select-none"
+        className="px-3 py-2 flex justify-between items-center select-none w-full cursor-pointer sticky z-100"
         onClick={() => setOpen((value) => !value)}
       >
         <div className="flex gap-2 items-center">
@@ -152,11 +205,12 @@ export const DiffFileView = memo(function DiffFileView({
             className={`transition size-4 ${open ? "rotate-90" : ""}`}
           />
           <FileIcon filename={path} className="w-4 h-4" />
-          <p>{path}</p>
+          <p className="mono text-sm">{path}</p>
         </div>
         <span className="stats">
-          <b className="add">+{file.additions}</b>
-          <b className="remove">-{file.deletions}</b>
+          {currentFile.status ? <span>{currentFile.status}</span> : null}
+          <b className="add">+{currentFile.additions}</b>
+          <b className="remove">-{currentFile.deletions}</b>
           <span>{lineCount} lines</span>
         </span>
       </button>
@@ -167,6 +221,21 @@ export const DiffFileView = memo(function DiffFileView({
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
           style={{ height: `${viewportHeight}px` }}
         >
+          {patchQuery.isFetching ? (
+            <div className="omitted">Loading patch…</div>
+          ) : null}
+          {patchError ? (
+            <div className="omitted">
+              {patchError instanceof Error
+                ? patchError.message
+                : "Failed to load file patch"}
+            </div>
+          ) : null}
+          {!patchQuery.isFetching && !patchError && rows.length === 0 ? (
+            <div className="omitted">
+              No text patch available for this file.
+            </div>
+          ) : null}
           <div className="diff-spacer" style={{ height: `${spacerHeight}px` }}>
             <div
               className="diff-window"
@@ -186,9 +255,9 @@ export const DiffFileView = memo(function DiffFileView({
               )}
             </div>
           </div>
-          {file.omittedLines > 0 ? (
+          {currentFile.omittedLines > 0 ? (
             <div className="omitted">
-              {file.omittedLines} lines hidden by the server cap
+              {currentFile.omittedLines} lines hidden by the server cap
             </div>
           ) : null}
         </div>
