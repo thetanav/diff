@@ -465,4 +465,8 @@ Bun.serve({
   },
 });
 
-console.log(`Bun server listening on http://localhost:${PORT}`);
+const WEBDIFF_PR = process.env.WEBDIFF_PR;
+if (WEBDIFF_PR) {
+  console.log(`PR: ${WEBDIFF_PR}`);
+}
+console.log(`webdiff running at http://localhost:${PORT}`);

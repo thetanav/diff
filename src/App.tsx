@@ -1,23 +1,26 @@
 import { useMemo, useState, useEffect, type FormEvent } from "react";
 import { DiffFileView, samplePr, type DiffPayload } from "./components/utils";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Moon, Search, Sun } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 
 function App() {
-  const [pr, setPr] = useState("");
-  const [submittedPr, setSubmittedPr] = useState("");
+  const initialPr =
+    typeof window !== "undefined"
+      ? decodeURIComponent(window.location.hash.slice(1))
+      : "";
+  const [pr, setPr] = useState(initialPr);
+  const [submittedPr, setSubmittedPr] = useState(initialPr);
   const [filter, setFilter] = useState("");
   const [maxRows, setMaxRows] = useState(20);
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    return false;
-  });
-
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode);
-  }, [darkMode]);
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    function update() {
+      document.documentElement.classList.toggle("dark", mq.matches);
+    }
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   const {
     data: payload,
