@@ -1,5 +1,5 @@
 {
-  "name": "webdiff",
+  "name": "@10xdevs/diff",
   "version": "0.1.0",
   "description": "A fast, compact PR diff viewer — run from the terminal",
   "type": "module",
@@ -30,7 +30,13 @@
     "type": "git",
     "url": "git+https://github.com/thetanav/diff.git"
   },
-  "keywords": ["diff", "pr", "pull-request", "github", "review"],
+  "keywords": [
+    "diff",
+    "pr",
+    "pull-request",
+    "github",
+    "review"
+  ],
   "license": "MIT",
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
