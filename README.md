@@ -1,47 +1,33 @@
-# PR Diff Viewer
+# webdiff
 
-A minimal, fast PR diff viewer that strips away GitHub's noise.
-
-Paste any GitHub PR URL (or `owner/repo#123`) and get a clean, compact view of every file change — additions, deletions, and all.
-
-## How it works
-
-```
-You paste a PR URL
-       │
-       ▼
-┌─────────────────┐
-│  Bun API server │  ← Fetches files via GitHub API (with pagination)
-└────────┬────────┘       Auth: GitHub token or `gh auth token`
-         │
-         ▼
-┌─────────────────┐
-│  Parse the      │  ← Splits patch hunks (@@ markers), truncates long lines
-│  raw diff patch │     Caps at 450 lines per file, 240 chars per line
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  React UI       │  ← Accordion file list, search/filter, dark mode
-│  + Tailwind     │     Max rows slider to limit visible diff lines
-└─────────────────┘
-```
-
-Features:
-- Lazy-load individual file diffs on click
-- File search filter
-- Dark/light mode
-- Configurable max rows display
-- Uses your `gh` CLI token automatically
-
-## Setup
+A fast, compact PR diff viewer — run from the terminal, stripped of GitHub's noise.
 
 ```bash
-bun install
-bun run dev
+npx webdiff https://github.com/owner/repo/pull/123
 ```
 
-Open `http://localhost:3000` and paste a PR URL.
+Paste any GitHub PR URL (or `owner/repo#123`) and get a clean, compact view of every file change.
+
+## Features
+
+- **Keyboard-first** — `j`/`k` to navigate files, `/` to search, `c`/`e` to collapse/expand, `?` for help
+- **Dark mode** — persisted preference, auto-detects system theme
+- **Fast** — lazy-loads file diffs on scroll, virtual-scrolled diff view
+- **Search** — filter files by name, collapse/expand all
+- **CLI-friendly** — `npx webdiff <pr>` opens directly in browser
+- **Your token** — uses `gh auth token` or `GITHUB_TOKEN` automatically
+
+## Usage
+
+```bash
+# Open a PR
+npx webdiff https://github.com/owner/repo/pull/123
+npx webdiff owner/repo#123
+
+# Development
+bun install
+bun run dev        # Vite + API server
+```
 
 ## Environment
 
@@ -56,4 +42,4 @@ Open `http://localhost:3000` and paste a PR URL.
 
 ## Stack
 
-React · TypeScript · Bun · Tailwind CSS · React Query · Lucide
+React 19 · TypeScript · Bun · Tailwind CSS 4 · React Query · Lucide · Geist

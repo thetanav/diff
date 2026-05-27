@@ -1,6 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, File } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronRight,
+  Copy,
+  Check,
+  FileCode,
+} from "lucide-react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 
 const extIcons: Record<string, string> = {
   ts: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/typescript/typescript-original.svg",
@@ -12,6 +24,10 @@ const extIcons: Record<string, string> = {
   py: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg",
   css: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/css3/css3-original.svg",
   html: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/html5/html5-original.svg",
+  go: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/go/go-original.svg",
+  rs: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/rust/rust-original.svg",
+  yml: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/yaml/yaml-original.svg",
+  yaml: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/yaml/yaml-original.svg",
   gitignore:
     "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/git/git-original.svg",
 };
@@ -31,7 +47,7 @@ export function FileIcon({
     return <img src={iconUrl} className={className} alt={ext} />;
   }
 
-  return <File className={className} />;
+  return <FileCode className={className} />;
 }
 
 export type DiffLineType = "add" | "remove" | "context" | "meta";
@@ -107,21 +123,52 @@ export const DiffLineRow = memo(function DiffLineRow({
   );
 });
 
+type CopyPathButtonProps = {
+  path: string;
+};
+
+const CopyPathButton = memo(function CopyPathButton({
+  path,
+}: CopyPathButtonProps) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback(() => {
+    void navigator.clipboard.writeText(path);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  }, [path]);
+
+  return (
+    <button
+      onClick={copy}
+      className="opacity-0 group-hover/file:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--muted)] hover:text-[var(--fg)]"
+      title="Copy path"
+    >
+      {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+    </button>
+  );
+});
+
 export const DiffFileView = memo(function DiffFileView({
   file,
-  defaultOpen,
+  open,
+  onToggle,
   maxRows,
   pr,
+  fileRef,
+  focused,
 }: {
   file: DiffFile;
-  defaultOpen: boolean;
+  open: boolean;
+  onToggle: () => void;
   maxRows: number;
   pr: string;
+  fileRef?: (el: HTMLElement | null) => void;
+  focused?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   const path = file.newPath || file.oldPath;
   const [scrollTop, setScrollTop] = useState(0);
-  const [isInView, setIsInView] = useState(defaultOpen);
+  const [isInView, setIsInView] = useState(open);
   const sectionRef = useRef<HTMLElement | null>(null);
   const rowHeight = 24;
   const maxVisibleRows = Math.max(1, Math.floor(maxRows));
@@ -141,6 +188,12 @@ export const DiffFileView = memo(function DiffFileView({
 
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (focused && sectionRef.current) {
+      sectionRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [focused]);
 
   const patchQuery = useQuery<DiffFile>({
     queryKey: ["pr-file-diff", pr, path],
@@ -194,33 +247,50 @@ export const DiffFileView = memo(function DiffFileView({
   const viewportHeight =
     Math.max(1, Math.min(totalRows, maxVisibleRows)) * rowHeight;
 
+  const statWidth = useMemo(() => {
+    const total = currentFile.additions + currentFile.deletions;
+    if (total === 0) return { add: 0, del: 0 };
+    return {
+      add: (currentFile.additions / total) * 100,
+      del: (currentFile.deletions / total) * 100,
+    };
+  }, [currentFile.additions, currentFile.deletions]);
+
   return (
-    <section className="file" ref={sectionRef}>
+    <section
+      className="file group/file"
+      ref={(el) => {
+        sectionRef.current = el;
+        fileRef?.(el);
+      }}
+    >
       <button
-        className="px-3 py-2 flex justify-between items-center select-none w-full cursor-pointer sticky z-100"
-        onClick={() => setOpen((value) => !value)}
+        className="file-head"
+        onClick={onToggle}
       >
-        <div className="flex gap-2 items-center">
-          <ChevronRight
-            className={`transition size-4 ${open ? "rotate-90" : ""}`}
-          />
-          <FileIcon filename={path} className="w-4 h-4" />
-          <p className="mono text-sm">{path}</p>
+        <ChevronRight
+          className={`twisty transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+        />
+        <div className="flex gap-2 items-center min-w-0">
+          <FileIcon filename={path} className="size-4 shrink-0" />
+          <span className="path">{path}</span>
         </div>
         <span className="stats">
-          {currentFile.status ? <span>{currentFile.status}</span> : null}
+          <CopyPathButton path={path} />
+          {currentFile.status && currentFile.status !== "modified" ? (
+            <span className={`status-badge status-${currentFile.status}`}>
+              {currentFile.status}
+            </span>
+          ) : null}
           <b className="add">+{currentFile.additions}</b>
           <b className="remove">-{currentFile.deletions}</b>
-          <span>{lineCount} lines</span>
+          {lineCount > 0 ? <span className="dim">{lineCount} lines</span> : null}
         </span>
       </button>
-      {open ? (
-        <div
-          className="diff"
-          aria-label={`${path} diff`}
-          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          style={{ height: `${viewportHeight}px` }}
-        >
+      <div
+        className={`diff-container transition-all duration-200 ease-in-out ${open ? "diff-open" : "diff-closed"}`}
+      >
+        <div className="diff">
           {patchQuery.isFetching ? (
             <div className="omitted">Loading patch…</div>
           ) : null}
@@ -236,32 +306,57 @@ export const DiffFileView = memo(function DiffFileView({
               No text patch available for this file.
             </div>
           ) : null}
-          <div className="diff-spacer" style={{ height: `${spacerHeight}px` }}>
+          {statWidth.add > 0 || statWidth.del > 0 ? (
+            <div className="diff-stat-bar">
+              <div
+                className="diff-stat-add"
+                style={{ width: `${Math.max(statWidth.add, 1)}%` }}
+              />
+              <div
+                className="diff-stat-del"
+                style={{ width: `${Math.max(statWidth.del, 1)}%` }}
+              />
+            </div>
+          ) : null}
+          <div
+            className="diff-scroll"
+            aria-label={`${path} diff`}
+            onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+            style={{ maxHeight: `${viewportHeight}px` }}
+          >
             <div
-              className="diff-window"
-              style={{ paddingTop: `${startIndex * rowHeight}px` }}
+              className="diff-spacer"
+              style={{ height: `${spacerHeight}px` }}
             >
-              {visibleRows.map((row, rowIndex) =>
-                row.kind === "hunk" ? (
-                  <div className="hunk-head" key={`${row.header}-${rowIndex}`}>
-                    {row.header}
-                  </div>
-                ) : (
-                  <DiffLineRow
-                    line={row.line}
-                    key={`${rowIndex}-${row.line.content}`}
-                  />
-                ),
-              )}
+              <div
+                className="diff-window"
+                style={{ paddingTop: `${startIndex * rowHeight}px` }}
+              >
+                {visibleRows.map((row, rowIndex) =>
+                  row.kind === "hunk" ? (
+                    <div
+                      className="hunk-head"
+                      key={`${row.header}-${rowIndex}`}
+                    >
+                      {row.header}
+                    </div>
+                  ) : (
+                    <DiffLineRow
+                      line={row.line}
+                      key={`${rowIndex}-${row.line.content}`}
+                    />
+                  ),
+                )}
+              </div>
             </div>
           </div>
           {currentFile.omittedLines > 0 ? (
             <div className="omitted">
-              {currentFile.omittedLines} lines hidden by the server cap
+              {currentFile.omittedLines} lines hidden by server cap
             </div>
           ) : null}
         </div>
-      ) : null}
+      </div>
     </section>
   );
 });

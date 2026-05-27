@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { spawn, execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
+
+const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf-8"));
+const VERSION = pkg.version;
 
 function hasBun() {
   try {
@@ -51,18 +54,58 @@ function waitForPort(port, timeout = 10000) {
   });
 }
 
+const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+const green = (s) => `\x1b[32m${s}\x1b[0m`;
+const red = (s) => `\x1b[31m${s}\x1b[0m`;
+const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
+
+function help() {
+  console.log(`
+${bold("webdiff")} ${dim(`v${VERSION}`)} — A fast, compact PR diff viewer
+
+${bold("Usage")}
+  ${green("npx webdiff")} ${cyan("<pr-url|owner/repo#123>")}    ${dim("Open a PR diff")}
+  ${green("npx webdiff")} ${cyan("--help")}                      ${dim("Show this help")}
+  ${green("npx webdiff")} ${cyan("--version")}                   ${dim("Show version")}
+
+${bold("Options")}
+  ${cyan("--version, -v")}    Print version
+  ${cyan("--help, -h")}       Print this help
+
+${bold("Environment")}
+  ${dim("PORT")}              Server port ${dim("(default: 3000)")}
+  ${dim("GITHUB_TOKEN")}      GitHub API token ${dim("(falls back to gh auth token)")}
+
+${bold("Examples")}
+  ${dim("$")} ${green("npx webdiff")} ${cyan("https://github.com/owner/repo/pull/123")}
+  ${dim("$")} ${green("npx webdiff")} ${cyan("owner/repo#123")}
+`);
+}
+
 async function main() {
   const args = process.argv.slice(2);
+
+  if (args.includes("--help") || args.includes("-h")) {
+    help();
+    return;
+  }
+
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log(`v${VERSION}`);
+    return;
+  }
+
   const pr = args[0] || "";
 
   const bun = hasBun();
   if (!bun) {
-    console.error("Error: webdiff requires Bun (https://bun.sh) to run.");
+    console.error(`${red("Error:")} webdiff requires ${bold("Bun")} (https://bun.sh) to run.`);
     process.exit(1);
   }
 
   if (!existsSync(resolve(root, "dist"))) {
-    console.log("Building frontend…");
+    console.log(`${dim("→")} Building frontend…`);
     execSync("bun run build", { cwd: root, stdio: "inherit" });
   }
 
@@ -73,7 +116,7 @@ async function main() {
     ...(pr ? { WEBDIFF_PR: pr } : {}),
   };
 
-  console.log(`Starting webdiff server on http://localhost:${PORT} …`);
+  console.log(`${dim("→")} Starting webdiff server on ${bold(`http://localhost:${PORT}`)} …`);
   const server = spawn("bun", ["run", "server.ts"], {
     cwd: root,
     env,
@@ -91,11 +134,11 @@ async function main() {
     ? `http://localhost:${PORT}/#${encodeURIComponent(pr)}`
     : `http://localhost:${PORT}`;
 
-  console.log(`Opening ${url}`);
+  console.log(`${dim("→")} Opening ${bold(url)}`);
   openBrowser(url);
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(`${red("Error:")} ${err.message}`);
   process.exit(1);
 });

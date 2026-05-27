@@ -8,6 +8,12 @@ const PR_FILES_CACHE_TTL_MS = Number(
 );
 let githubTokenPromise: Promise<string | undefined> | undefined;
 
+function log(level: string, msg: string, ...args: unknown[]) {
+  const ts = new Date().toISOString().slice(11, 23);
+  const prefix = `\x1b[90m${ts}\x1b[0m \x1b[${level === "error" ? "31" : level === "warn" ? "33" : "36"}m${level.padEnd(5)}\x1b[0m`;
+  console.log(`${prefix}  ${msg}`, ...args);
+}
+
 type DiffLineType = "add" | "remove" | "context" | "meta";
 
 type DiffLine = {
@@ -79,6 +85,7 @@ function json(data: unknown, init: ResponseInit = {}) {
     ...init,
     headers: {
       "content-type": "application/json; charset=utf-8",
+      "access-control-allow-origin": "*",
       ...init.headers,
     },
   });
@@ -439,16 +446,22 @@ async function serveStatic(pathname: string) {
   return new Response(file);
 }
 
-Bun.serve({
+const server = Bun.serve({
   port: PORT,
   async fetch(request) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/api/health") {
+      return json({ status: "ok", uptime: process.uptime() });
+    }
+
     if (url.pathname === "/api/pr-diff") {
+      log("info", `GET /api/pr-diff?pr=${url.searchParams.get("pr") ?? ""}`);
       return handleDiffSummary(request);
     }
 
     if (url.pathname === "/api/pr-file-diff") {
+      log("info", `GET /api/pr-file-diff ${url.searchParams.get("path") ?? ""}`);
       return handleFileDiff(request);
     }
 
@@ -465,8 +478,17 @@ Bun.serve({
   },
 });
 
+function shutdown() {
+  log("info", "Shutting down gracefully...");
+  server.stop();
+  process.exit(0);
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
 const WEBDIFF_PR = process.env.WEBDIFF_PR;
 if (WEBDIFF_PR) {
-  console.log(`PR: ${WEBDIFF_PR}`);
+  log("info", `Pre-loaded PR: ${WEBDIFF_PR}`);
 }
-console.log(`webdiff running at http://localhost:${PORT}`);
+log("info", `webdiff running at \x1b[1mhttp://localhost:${PORT}\x1b[0m`);
